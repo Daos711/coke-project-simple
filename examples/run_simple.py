@@ -1,102 +1,70 @@
-"""
-Главный скрипт для запуска симуляции замедленного коксования
-Main script for running delayed coking simulation
-"""
+# examples/run_simple.py
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+from pathlib import Path
+import numpy as np
 
-import sys
-import os
+from src.params import defaults
+from src.kinetics import VR3Kinetics
+from src.solver_1d import Coking1DSolver
+from src.visualization import render_all_ru
 
-# Добавляем путь к модулям src
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+EXP_H_CM = 48.34
+EXP_Y_PCT = 36.57
 
-# Прямой импорт из модулей (без циклических зависимостей)
-import src.params as params
-from src.geometry import Geometry1D
-from src.kinetics import KineticsModel
-from src.solver_1d import Solver1D
-from src.visualization import Visualizer
-
+def ensure_dir(p: Path):
+    p.mkdir(parents=True, exist_ok=True)
 
 def main():
-    """Главная функция"""
-
-    print("\n" + "=" * 70)
+    print("\n======================================================================")
     print("    СИМУЛЯЦИЯ РЕАКТОРА ЗАМЕДЛЕННОГО КОКСОВАНИЯ")
-    print("    CFD Simulation of Delayed Coking Reactor")
-    print("=" * 70 + "\n")
+    print("======================================================================\n")
 
-    # ========================================================================
-    # 1. ИНИЦИАЛИЗАЦИЯ
-    # ========================================================================
+    geom, inlet, walls, mats, tcfg = defaults()
+    kin = VR3Kinetics()
+
+    outdir = Path("results"); ensure_dir(outdir)
+
+    # ---- Информация
     print("Шаг 1: Инициализация...")
+    print("======================================================================")
+    print("Геометрия:")
+    print(f"  Высота реактора: {geom.H:.3f} м | Диаметр: {geom.D:.4f} м | Площадь: {geom.A:.6f} м²")
+    print("Сетка:")
+    print(f"  NZ={geom.NZ} | dz={geom.dz*1000:.2f} мм")
+    print("Время:")
+    print(f"  T_sim={tcfg.total_hours:.1f} ч | dt={tcfg.dt:.4f} с | шагов={int(tcfg.total_hours*3600/tcfg.dt)}")
+    print("Условия:")
+    v_in = inlet.velocity(geom) * 1000.0
+    print(f"  T_in={inlet.T_in_C:.1f} °C | m_dot={inlet.m_dot_kg_s*1000*60:.2f} g/min | v_in={v_in:.5f} мм/с")
+    print("======================================================================\n")
 
-    # Вывод параметров
-    params.print_parameters()
+    # ---- Решатель
+    print("Шаг 2: Создание решателя..."); solver = Coking1DSolver(geom, inlet, walls, mats, tcfg, kin)
+    print("Решатель инициализирован")
 
-    # Создание геометрии
-    geometry = Geometry1D()
-    geometry.print_info()
+    print("Шаг 3: Запуск симуляции...\n")
+    print("======================================================================")
+    print("ЗАПУСК СИМУЛЯЦИИ (с Numba JIT, если доступна)")
+    print("======================================================================")
+    results = solver.run(verbose_hourly=True)
 
-    # Создание кинетической модели
-    kinetics = KineticsModel(vr_params=params.ACTIVE_VR)
-    kinetics.print_info()
+    H_cm = results["H_bed_m"] * 100.0
+    Y    = results["yield_pct"]
+    print("\n======================================================================")
+    print("СИМУЛЯЦИЯ ЗАВЕРШЕНА")
+    print("======================================================================")
+    print(f"Финальная высота коксового слоя: {H_cm:.2f} см")
+    print(f"Финальный выход кокса:           {Y:.2f} %")
+    print("======================================================================\n")
 
-    # ========================================================================
-    # 2. СОЗДАНИЕ РЕШАТЕЛЯ
-    # ========================================================================
-    print("Шаг 2: Создание решателя...")
-    solver = Solver1D(geometry=geometry, kinetics=kinetics)
-
-    # ========================================================================
-    # 3. ЗАПУСК СИМУЛЯЦИИ
-    # ========================================================================
-    print("Шаг 3: Запуск симуляции...")
-    solver.run(verbose=True)
-
-    # ========================================================================
-    # 4. ПОЛУЧЕНИЕ РЕЗУЛЬТАТОВ
-    # ========================================================================
-    print("Шаг 4: Обработка результатов...")
-    results = solver.get_results()
-
-    print(f"\nФИНАЛЬНЫЕ РЕЗУЛЬТАТЫ:")
-    print(f"  Высота коксового слоя: {results['final_coke_height'] * 100:.2f} см")
-    print(f"  Выход кокса:           {results['final_coke_yield'] * 100:.2f} %\n")
-
-    # ========================================================================
-    # 5. ВИЗУАЛИЗАЦИЯ
-    # ========================================================================
-    print("Шаг 5: Генерация графиков...")
-    visualizer = Visualizer(results)
-    visualizer.generate_all_plots()
-    visualizer.save_data_to_file()
-
-    # ========================================================================
-    # ЗАВЕРШЕНИЕ
-    # ========================================================================
-    print("\n" + "=" * 70)
-    print("    СИМУЛЯЦИЯ УСПЕШНО ЗАВЕРШЕНА!")
-    print("=" * 70)
-    print(f"\nРезультаты сохранены в папке: {params.OUTPUT_DIR}/")
-    print("Графики:")
-    print("  - volume_fractions_evolution.png")
-    print("  - temperature_evolution.png")
-    print("  - coke_bed_growth.png")
-    print("  - porosity_profile.png")
-    print("  - contour_maps.png")
-    print("  - comparison_with_experiment.png")
-    print("\nДанные:")
-    print("  - simulation_results.txt")
-    print("\n" + "=" * 70 + "\n")
-
+    # ---- Визуализация и отчёт (ОДИН вызов)
+    print("Шаг 4: Визуализация и отчёт...")
+    paths = render_all_ru(results, geom, inlet, mats, tcfg,
+                          exp_H_cm=EXP_H_CM, exp_Y_pct=EXP_Y_PCT, outdir=str(outdir))
+    print("Готово. Файлы:")
+    for k, v in paths.items():
+        print(f"  - {k}: {v}")
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\nСимуляция прервана пользователем.")
-    except Exception as e:
-        print(f"\n\nОШИБКА: {e}")
-        import traceback
-
-        traceback.print_exc()
+    main()

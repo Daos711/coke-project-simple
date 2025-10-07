@@ -1,151 +1,44 @@
-"""
-Параметры модели замедленного коксования
-Based on: Díaz et al. (2017) - CFD simulation of delayed coking reactor
-"""
+# src/params.py
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+from dataclasses import dataclass
+from .geometry import Geometry
 
-import numpy as np
+@dataclass
+class Inlet:
+    T_in_C: float = 370.0             # °C
+    m_dot_kg_s: float = 5e-3 / 60.0   # кг/с (5 g/min)
+    rho_vr: float = 1050.0            # кг/м^3
+    v_gas_factor: float = 25.0        # ← газ бежит быстрее жидкости (25×)
 
-# ============================================================================
-# ГЕОМЕТРИЯ РЕАКТОРА
-# ============================================================================
-REACTOR_HEIGHT = 0.57  # м - высота реактора
-REACTOR_DIAMETER = 0.10  # м - внутренний диаметр
-REACTOR_AREA = np.pi * (REACTOR_DIAMETER / 2) ** 2  # м²
+    def velocity(self, geom: Geometry) -> float:
+        return self.m_dot_kg_s / (self.rho_vr * geom.A)
 
-# ============================================================================
-# ПАРАМЕТРЫ СЕТКИ
-# ============================================================================
-N_POINTS = 50  # количество точек по высоте
-DZ = REACTOR_HEIGHT / (N_POINTS - 1)  # шаг сетки, м
+    def velocity_gas(self, geom: Geometry) -> float:
+        return self.velocity(geom) * self.v_gas_factor
 
-# ============================================================================
-# ВРЕМЕННЫЕ ПАРАМЕТРЫ
-# ============================================================================
-SIMULATION_TIME = 12.0 * 3600  # 12 часов в секундах
-DT = 0.05  # шаг по времени (увеличен для скорости)
-N_TIMESTEPS = int(SIMULATION_TIME / DT)
-SAVE_INTERVAL = 3600  # сохранять результаты каждый час (в секундах)
+@dataclass
+class Walls:
+    T_wall_C: float = 510.0
+    # профиль времени прогрева: снизу быстрее, сверху медленнее
+    tau_heat_s: float = 10.0 * 60.0
+    tau_heat_bottom_s: float = 10.0 * 60.0
+    tau_heat_top_s: float = 120.0 * 60.0
+    tau_profile_beta: float = 2.0
 
-# ============================================================================
-# ГРАНИЧНЫЕ И НАЧАЛЬНЫЕ УСЛОВИЯ
-# ============================================================================
-INLET_VELOCITY = 0.001  # м/с - скорость подачи сырья
-INLET_TEMPERATURE = 773.15  # K (500°C) - температура входа
-WALL_TEMPERATURE = 773.15  # K - температура стенки
-INITIAL_TEMPERATURE = 773.15  # K - начальная температура
+@dataclass
+class Materials:
+    rho_coke_bulk: float = 950.0        # кг/м^3 (bulk)
+    rho_dist_vap: float = 3.0           # кг/м^3 (условная для паров)
+    alpha_c_threshold: float = 0.03     # для совместимости (в высоте больше не нужен)
 
-# ============================================================================
-# ФИЗИЧЕСКИЕ СВОЙСТВА ФАЗ
-# ============================================================================
+@dataclass
+class TimeSetup:
+    total_hours: float = 12.0
+    dt: float = 0.05
+    snapshots_h: tuple[float, ...] = (0.0, 3.0, 6.0, 9.0, 12.0)
+    contour_every_s: float = 10.0 * 60.0
 
-# Вакуумный остаток (Vacuum Residue)
-VR_DENSITY = 900.0  # кг/м³
-VR_VISCOSITY = 0.01  # Па·с
-VR_HEAT_CAPACITY = 2500.0  # Дж/(кг·К)
-VR_THERMAL_CONDUCTIVITY = 0.15  # Вт/(м·К)
-
-# Дистилляты (Distillables)
-DIST_DENSITY = 800.0  # кг/м³
-DIST_VISCOSITY = 0.001  # Па·с
-DIST_HEAT_CAPACITY = 2300.0  # Дж/(кг·К)
-DIST_THERMAL_CONDUCTIVITY = 0.13  # Вт/(м·К)
-
-# Кокс (Coke)
-COKE_DENSITY = 1500.0  # кг/м³
-COKE_HEAT_CAPACITY = 1800.0  # Дж/(кг·К)
-COKE_THERMAL_CONDUCTIVITY = 0.5  # Вт/(м·К)
-COKE_POROSITY_MIN = 0.2  # минимальная пористость
-COKE_POROSITY_MAX = 0.5  # максимальная пористость
-
-# ============================================================================
-# КИНЕТИЧЕСКИЕ ПАРАМЕТРЫ (для трёх типов сырья)
-# ============================================================================
-
-# Vacuum Residue 1 (легкое сырье) - 22% кокса
-VR1_PARAMS = {
-    'name': 'Vacuum Residue 1',
-    'k_dist_0': 25.0,     # БОЛЬШЕ дистиллятов
-    'E_dist': 88000.0,    # НИЖЕ энергия = быстрее
-    'k_coke_0': 8.0,      # меньше кокса
-    'E_coke': 92000.0,    # ВЫШЕ энергия = медленнее
-    'delta_H_dist': -50000.0,
-    'delta_H_coke': -100000.0,
-}
-
-# Vacuum Residue 2 (среднее сырье) - 35% кокса
-VR2_PARAMS = {
-    'name': 'Vacuum Residue 2',
-    'k_dist_0': 18.0,
-    'E_dist': 90000.0,
-    'k_coke_0': 12.0,
-    'E_coke': 88000.0,
-    'delta_H_dist': -55000.0,
-    'delta_H_coke': -110000.0,
-}
-
-# Vacuum Residue 3 (тяжелое сырье) - 37% кокса
-VR3_PARAMS = {
-    'name': 'Vacuum Residue 3',
-    'k_dist_0': 12.0,     # МЕНЬШЕ дистиллятов
-    'E_dist': 92000.0,    # ВЫШЕ энергия = медленнее
-    'k_coke_0': 15.0,     # БОЛЬШЕ кокса
-    'E_coke': 85000.0,    # НИЖЕ энергия = быстрее
-    'delta_H_dist': -60000.0,
-    'delta_H_coke': -120000.0,
-}
-
-# Выбор типа сырья для симуляции
-ACTIVE_VR = VR3_PARAMS
-
-# ============================================================================
-# ФИЗИЧЕСКИЕ КОНСТАНТЫ
-# ============================================================================
-R_GAS = 8.314  # Дж/(моль·К) - универсальная газовая постоянная
-GRAVITY = 9.81  # м/с² - ускорение свободного падения
-
-# ============================================================================
-# ПАРАМЕТРЫ МЕЖФАЗНОГО ВЗАИМОДЕЙСТВИЯ
-# ============================================================================
-DRAG_COEFFICIENT = 0.44
-HEAT_TRANSFER_COEFF = 500.0  # Вт/(м²·К)
-
-# ============================================================================
-# ПАРАМЕТРЫ ВЫВОДА
-# ============================================================================
-OUTPUT_DIR = "results"
-SAVE_PLOTS = True
-SAVE_DATA = True
-VERBOSE = True
-
-# ============================================================================
-# ЭКСПЕРИМЕНТАЛЬНЫЕ ДАННЫЕ ДЛЯ СРАВНЕНИЯ (из статьи, Table 5)
-# ============================================================================
-EXPERIMENTAL_DATA = {
-    'VR1': {'coke_yield': 0.2159, 'final_height': 0.3614},
-    'VR2': {'coke_yield': 0.3552, 'final_height': 0.4292},
-    'VR3': {'coke_yield': 0.3657, 'final_height': 0.4834},
-}
-
-def print_parameters():
-    """Вывод основных параметров симуляции"""
-    print("="*70)
-    print("ПАРАМЕТРЫ СИМУЛЯЦИИ ЗАМЕДЛЕННОГО КОКСОВАНИЯ")
-    print("="*70)
-    print(f"Геометрия:")
-    print(f"  Высота реактора: {REACTOR_HEIGHT:.3f} м")
-    print(f"  Диаметр реактора: {REACTOR_DIAMETER:.3f} м")
-    print(f"  Площадь сечения: {REACTOR_AREA:.6f} м²")
-    print(f"\nСетка:")
-    print(f"  Число точек: {N_POINTS}")
-    print(f"  Шаг по высоте: {DZ*1000:.2f} мм")
-    print(f"\nВремя:")
-    print(f"  Время симуляции: {SIMULATION_TIME/3600:.1f} часов")
-    print(f"  Шаг по времени: {DT:.4f} с")
-    print(f"  Число шагов: {N_TIMESTEPS}")
-    print(f"\nАктивное сырье: {ACTIVE_VR['name']}")
-    print(f"  E_activation (dist): {ACTIVE_VR['E_dist']/1000:.1f} кДж/моль")
-    print(f"  E_activation (coke): {ACTIVE_VR['E_coke']/1000:.1f} кДж/моль")
-    print(f"\nУсловия:")
-    print(f"  Температура входа: {INLET_TEMPERATURE-273.15:.1f} °C")
-    print(f"  Скорость подачи: {INLET_VELOCITY*1000:.2f} мм/с")
-    print("="*70)
+def defaults():
+    from .geometry import Geometry
+    return Geometry(), Inlet(), Walls(), Materials(), TimeSetup()
