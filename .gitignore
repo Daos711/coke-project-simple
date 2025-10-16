@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Сборка/артефакты
+build/
+dist/
+*.spec
+results/
+
+# Бинарники, не относящиеся к исходникам
+*.dll
+*.pyd
+*.exe
