@@ -4,6 +4,69 @@ from __future__ import annotations
 from dataclasses import dataclass
 from .geometry import Geometry
 
+
+@dataclass
+class WallLayer:
+    """Single wall/lining layer description (SI units)."""
+    k: float
+    rho: float
+    cp: float
+    thickness: float
+    epsilon: float = 0.85
+
+
+@dataclass
+class WallEnergy:
+    """Two-node wall energy model configuration."""
+    outer: WallLayer
+    inner: WallLayer
+    h_amb: float
+    T_amb_C: float
+    zones: int = 3
+
+
+@dataclass
+class MixtureEnergy:
+    """Effective thermal properties of the reacting mixture."""
+    lambda_eff: float
+    cp_eff: float
+    h0_mix: float
+    alpha_mdot: float
+    alpha_p: float
+    mdot_ref: float
+    p_ref: float
+
+
+@dataclass
+class ReactionEnergy:
+    """Effective heats of reaction (per kilogram of VR)."""
+    dH_dist: float = 0.0
+    dH_coke: float = 0.0
+
+
+def default_wall_energy() -> WallEnergy:
+    """Factory helper for typical delayed coking drum wall properties."""
+    outer = WallLayer(k=30.0, rho=7800.0, cp=600.0, thickness=0.03, epsilon=0.85)
+    inner = WallLayer(k=1.5, rho=3500.0, cp=800.0, thickness=0.12, epsilon=0.80)
+    return WallEnergy(outer=outer, inner=inner, h_amb=15.0, T_amb_C=25.0)
+
+
+def default_mixture_energy() -> MixtureEnergy:
+    """Factory helper for an effective mixture energy configuration."""
+    return MixtureEnergy(
+        lambda_eff=0.5,
+        cp_eff=2500.0,
+        h0_mix=150.0,
+        alpha_mdot=0.5,
+        alpha_p=0.1,
+        mdot_ref=1.0,
+        p_ref=1.0,
+    )
+
+
+def default_reaction_energy() -> ReactionEnergy:
+    return ReactionEnergy(dH_dist=0.0, dH_coke=0.0)
+
 @dataclass
 class Inlet:
     T_in_C: float = 370.0

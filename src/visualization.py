@@ -102,6 +102,48 @@ def render_all_ru(results: dict, outdir: Path, exp_h_cm: float = None, exp_y_pct
         fig.savefig(outdir / 'growth.png', dpi=dpi)
         plt.close(fig)
 
+        # 4b) СРАВНЕНИЕ С ВРЕМЕННЫМИ РЯДАМИ
+        ts = results.get('timeseries', {})
+        if ts:
+            t_s = np.asarray(ts.get('t_s', []), dtype=float)
+            if t_s.size:
+                t_h = t_s / 3600.0
+                def _maybe(arr):
+                    arr = np.asarray(arr, dtype=float)
+                    return arr if arr.size == t_h.size else None
+
+                series = {
+                    'Верхнее днище': (ts.get('T_upper_model'), ts.get('T_upper_meas')),
+                    'Нижнее днище': (ts.get('T_lower_model'), ts.get('T_lower_meas')),
+                    'Выход смеси': (ts.get('T_out_model'), ts.get('T_out_meas')),
+                }
+                height = _maybe(ts.get('H_m'))
+                fig, axes = plt.subplots(2, 2, figsize=(14, 10), constrained_layout=True)
+                axes = axes.ravel()
+                for ax, (title, (model_arr, meas_arr)) in zip(axes[:3], series.items()):
+                    model = _maybe(model_arr)
+                    meas = _maybe(meas_arr)
+                    if meas is not None:
+                        ax.plot(t_h, meas, 'k.', ms=3, label='Факт')
+                    if model is not None:
+                        ax.plot(t_h, model, 'r-', lw=1.8, label='Модель')
+                    ax.set_title(title)
+                    ax.set_xlabel('Время (ч)')
+                    ax.set_ylabel('T (°C)')
+                    ax.grid(True, alpha=0.3)
+                    ax.legend(loc='best')
+                if height is not None:
+                    ax = axes[3]
+                    ax.plot(t_h, np.asarray(height) * 100.0, 'b-', lw=1.8)
+                    ax.set_title('Высота слоя')
+                    ax.set_xlabel('Время (ч)')
+                    ax.set_ylabel('H (см)')
+                    ax.grid(True, alpha=0.3)
+                else:
+                    fig.delaxes(axes[3])
+                fig.savefig(outdir / 'timeseries.png', dpi=dpi)
+                plt.close(fig)
+
         # 5) ВЫХОДЫ ФАЗ (серия) + 6) ФИНАЛ
         if len(cont.get('t_s', [])) > 0:
             A = float(meta['A_m2']); m_dot = float(meta['m_dot_kg_s'])
